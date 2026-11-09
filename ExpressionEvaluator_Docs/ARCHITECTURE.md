@@ -1,158 +1,61 @@
-# ARCHITECTURE — Kiến trúc một project WPF / MVVM
+# ARCHITECTURE — Một project WPF, Parse Tree E/T/F
 
-## 1. Quyết định kiến trúc
+## 1. Quyết định tổng quan
 
-- **Một project duy nhất**: `ExpressionEvaluator` (WPF), không tách Core/Tests sang project khác.
-- **MVVM bằng CommunityToolkit.Mvvm**.
-- Logic xử lý biểu thức **thuần C#**, không phụ thuộc `System.Windows` hoặc ViewModel.
-- Parser tạo **một Parse Tree**, dùng trực tiếp cho tính toán và giao diện. **Không có AST**.
-- Cây cú pháp **bất biến trong một lần phân tích**; Evaluator tạo `EvaluationResult` và `EvaluationStep` riêng.
-- Không persistence, server, database, I/O mạng; không Unit Test tự động.
+Ứng dụng là project `ExpressionEvaluator` (`net10.0-windows`), MVVM qua CommunityToolkit.Mvvm; project xUnit riêng tại `Tests/` tham chiếu ứng dụng, không tách Core, không database/persistence/server. Lexer, Recursive Descent Parser và Evaluator là **C# thuần**, không tham chiếu `System.Windows`, ViewModel hoặc Canvas. Lexer → Parser → **một Parse Tree CFG E/T/F** → Evaluator; không tạo AST. Cây bất biến, trace và geometry tách khỏi cây. TreeLayoutService tính geometry cho View; View chỉ vẽ, không tokenize/parse/tính.
 
-## 2. Cấu trúc thư mục đề xuất
+## 2. Cấu trúc ứng dụng và project kiểm thử
 
 ```text
 ExpressionEvaluator/
 ├── ExpressionEvaluator.csproj
-├── App.xaml
-├── App.xaml.cs
+├── App.xaml(.cs)
 ├── Models/
-│   ├── TokenType.cs
-│   ├── Token.cs
-│   ├── SourceSpan.cs
-│   ├── ParseTreeNode.cs
-│   ├── OperationKind.cs
-│   ├── EvaluationStepType.cs
-│   ├── EvaluationStep.cs
-│   ├── EvaluationResult.cs
-│   ├── ExpressionError.cs
-│   ├── ExpressionErrorCategory.cs
-│   ├── ExpressionAnalysisResult.cs
-│   ├── TreeNodePosition.cs
-│   └── TreeLayoutResult.cs
-├── Parsing/
-│   ├── GrammarDefinition.cs
-│   ├── Lexer.cs
-│   └── RecursiveDescentParser.cs
-├── Evaluation/
-│   └── ExpressionEvaluator.cs
-├── Services/
-│   ├── ExpressionService.cs
-│   ├── NumberFormatter.cs
-│   ├── TreeLayoutService.cs
-│   └── GrammarDialogService.cs
-├── Exceptions/
-│   ├── LexicalException.cs
-│   └── ParseException.cs
-├── ViewModels/
-│   ├── MainViewModel.cs
-│   ├── GrammarViewModel.cs
-│   └── ParseTreeNodeViewModel.cs
-├── Views/
-│   ├── MainWindow.xaml
-│   ├── MainWindow.xaml.cs
-│   ├── GrammarDialog.xaml
-│   ├── GrammarDialog.xaml.cs
-│   └── Controls/
-│       ├── ParseTreeView.xaml
-│       └── ParseTreeView.xaml.cs
-└── Resources/
-    └── Theme.xaml
+│   ├── TokenType.cs, Token.cs, SourceSpan.cs, ParseTreeNode.cs
+│   ├── OperationKind.cs, EvaluationStepType.cs, EvaluationStep.cs, EvaluationResult.cs
+│   ├── ExpressionError.cs, ExpressionErrorCategory.cs, ExpressionAnalysisResult.cs
+│   └── TreeNodePosition.cs, TreeEdge.cs, TreeLayoutResult.cs
+├── Parsing/GrammarDefinition.cs, Lexer.cs, RecursiveDescentParser.cs
+├── Evaluation/ExpressionEvaluator.cs
+├── Services/ExpressionService.cs, NumberFormatter.cs, TreeLayoutService.cs,
+│            IGrammarDialogService.cs, GrammarDialogService.cs
+├── Exceptions/LexicalException.cs, ParseException.cs
+├── ViewModels/MainViewModel.cs, GrammarViewModel.cs, ParseTreeNodeViewModel.cs
+├── Views/MainWindow.xaml(.cs), GrammarDialog.xaml(.cs),
+│         Controls/ParseTreeView.xaml(.cs)
+├── Resources/Theme.xaml
+├── Tests/ExpressionEvaluator.Tests.csproj, ExpressionCases.cs, StateAndTreeCases.cs
+└── ExpressionEvaluator_Docs/ (tài liệu chính thức)
 ```
-
-`Exceptions` chỉ chứa ngoại lệ cho lỗi tokenize/parse. Lỗi Evaluation được trả về dưới dạng `EvaluationResult` để **không mất các bước đã tính**.
 
 ## 3. Ranh giới trách nhiệm
 
-| Lớp/thành phần | Phụ thuộc hợp lệ | Không được phụ thuộc |
+| Tầng | Nhận / tạo | Không được làm |
 |---|---|---|
-| `Lexer` | `Models`, thư viện .NET chuẩn | WPF, ViewModel, TreeLayout |
-| `RecursiveDescentParser` | `Models`, `Parsing` | WPF, Evaluator, ViewModel |
-| `ExpressionEvaluator` | `Models` | WPF, Lexer, Parser, ViewModel |
-| `ExpressionService` | Validation, Lexer, Parser, Evaluator | XAML, Canvas, Dialog |
-| `NumberFormatter` | `decimal`, .NET | Logic parse |
-| `TreeLayoutService` | `ParseTreeNode`, vị trí/biên | Trạng thái tính toán |
-| `MainViewModel` | `ExpressionService`, `NumberFormatter`, dialog abstraction | Chi tiết cách vẽ Canvas |
-| `ParseTreeView` | Vị trí cây / highlight từ VM | Tự tokenize/parse/evaluate |
-| `GrammarDialog` | `GrammarViewModel` | Thay đổi CFG |
+| `Lexer` | Input → token có span + EOF | Hiểu CFG, thêm nhân ngầm |
+| `RecursiveDescentParser` | Token → cây `E/T/F`, mỗi node đúng production | Trả cây dở dang, tạo AST, tính giá trị |
+| `ExpressionEvaluator` | Cây → decimal, trace/provenance hoặc Evaluation Error | Sửa cây, dùng rounded output để tính |
+| `ExpressionService` | Validate → Lexer → Parser → Evaluator, hợp nhất lỗi | Dính WPF, đổi lỗi lập trình thành Syntax Error |
+| `TreeLayoutService` | Cây + kích thước nhãn → tọa độ/cạnh/bounding box | Đọc step, thay đổi Parse Tree |
+| `MainViewModel` | Điều phối Submit, stale, step/highlight, dialog abstraction | Vẽ Canvas, tự parse |
+| `ParseTreeView` | Layout + root + ID highlight → hình tròn/mũi tên | Tính toán hoặc dựng lại layout khi đổi bước |
 
-Giải pháp tạo dialog: dùng `GrammarDialogService` nhận yêu cầu hiển thị từ `MainViewModel`, giảm phụ thuộc trực tiếp vào `Window`. Trong một project đơn giản, khởi tạo thủ công bằng `App.xaml.cs`; không cần một DI container bên ngoài.
+Parser: `E/T` có **1 hoặc 3 con**, `F` có **1 (literal), 2 (unary) hoặc 3 (ngoặc) con**; terminal không có con. Chi tiết thứ tự con và FOLLOW set xem `GRAMMAR.md`. Cây phân nhánh phải thể hiện **phép dẫn xuất**, không khẳng định kết quả được tính bằng cách đánh giá subtree `E/T` bên phải. Fold-left phải đi dọc chuỗi cùng mức; provenance ID có thể thuộc nhiều nhánh, xem `EVALUATION.md`.
 
-## 4. Sơ đồ luồng dữ liệu
+## 4. Vòng đời Submit và lỗi
 
-```mermaid
-flowchart TD
-    A[MainWindow / Input] -->|CalculateCommand| B[MainViewModel]
-    B --> C[ExpressionService]
-    C --> D[Input Validation]
-    D --> E[Lexer]
-    E --> F[RecursiveDescentParser]
-    F --> G[ParseTreeNode root]
-    G --> H[ExpressionEvaluator]
-    H --> I[EvaluationResult / Steps]
-    G --> J[TreeLayoutService]
-    I --> B
-    J --> B
-    B --> K[Result & Error Panel]
-    B --> L[Step Navigator]
-    B --> M[ParseTreeView]
-```
+1. `CalculateCommand` gửi đúng chuỗi gốc từ TextBox; `ExpressionService` kiểm tra null/blank và `string.Length <= 200` **trước Lexer**.
+2. Lexer lỗi → Input/Lexical result không cây/trace; Parser lỗi → Syntax result không cây/trace. Parser chỉ xuất root khi gặp EOF. Evaluator lỗi → **giữ cây**, các step đã thành công và Error step cuối, `Value=null`.
+3. `MainViewModel` ghi `LastAnalyzedExpression` dù thất bại; reset `CurrentStepIndex=0`, bỏ layout cũ **trước** khi gắn `CurrentAnalysis` mới, chỉ bố trí geometry **một lần** nếu có cây (thành công hoặc Evaluation Error). Thành công hiện ngay `ResultText`.
+4. Khi gõ trước Submit mới: `IsResultOutdated = HasAnalysis && InputExpression != LastAnalyzedExpression`, vẫn giữ toàn bộ dữ liệu cũ và cho phép duyệt bước cũ. Khi input khớp lại chuỗi đã Submit thì hết stale, không tự động parse.
+5. Next/Previous chỉ thay index 0..N và tập ID highlight, thông báo `CanExecute`; không thay cây, layout, kết quả. Error text Evaluation hiện ngay từ lúc Submit, không chờ Next.
 
-Các mũi tên mô tả **dòng điều phối/dữ liệu**, không phải quan hệ kế thừa. Parser **không** trả AST và Evaluator **không** mutate cây.
+`GrammarDialogService` là adapter WPF duy nhất để ViewModel mở dialog chỉ đọc, không cần DI framework. Code-behind chỉ xử lý focus, Enter gửi **cùng CalculateCommand**, chọn span lỗi/caret EOF sau Submit; không có logic Lexer/Parser/Evaluator.
 
-## 5. Vòng đời một lần Calculate
+## 5. Geometry và tính nhất quán
 
-1. `MainViewModel.Calculate()` đọc `InputExpression`.
-2. Gọi `ExpressionService.Analyze(input)` một lần.
-3. Service kiểm tra input, tokenize, parse, evaluate; chuyển các lỗi dự kiến sang `ExpressionAnalysisResult`.
-4. `MainViewModel` gán `LastAnalyzedExpression = InputExpression` **kể cả khi thất bại**.
-5. ViewModel thay **toàn bộ** `CurrentAnalysis`, reset `CurrentStepIndex = 0`, clear highlighted IDs; làm mới error/result/tree.
-6. Nếu `ParseTree != null`, gọi `TreeLayoutService` một lần để có tọa độ cho các nút/đường nối.
-7. Giao diện cập nhật theo Data Binding; nếu thành công, hiển thị `Value` ngay lập tức.
-8. Bước kế tiếp/chuyển lùi chỉ gán `CurrentStepIndex` và `HighlightedNodeIds` từ `Steps` đã tạo.
+`TreeLayoutService` tính đủ mọi non-terminal/terminal, không lọc node hợp lệ nào: CFG mới **không có ε**. Mỗi nhãn được chứa trọn trong **hình tròn có đường kính động**; khoảng cách ngang theo bề rộng từng subtree, khoảng cách dọc theo đường kính lớn nhất của từng tầng. Các node ở cùng tầng không chồng nhau; các cạnh/mũi tên kết thúc ở rìa hình tròn, không đâm xuyên chữ. Canvas có Width/Height theo bounding box cả đầu mũi tên; ScrollViewer cho cuộn hai chiều. Gốc `E` có viền xanh; step highlight của toán tử/nguồn là trạng thái riêng, không đè mất dấu hiệu gốc. Khi đổi step chỉ cập nhật brush/border của node VM, **không sắp xếp lại cây**. Quy tắc đo/nhãn xem `UI_DESIGN.md`.
 
-**Không** gọi Parser/Evaluator từ nút Next/Previous.
+## 6. Kiểm thử và bảo trì
 
-## 6. Stale state — kết quả của biểu thức trước
-
-ViewModel lưu:
-
-- `InputExpression`: chuỗi đang nằm trong TextBox.
-- `LastAnalyzedExpression`: chuỗi được Submit gần nhất, bất kể Submit thành công hay thất bại.
-- `CurrentAnalysis`: kết quả của lần Submit đó (bao gồm lỗi, nếu có).
-- `HasAnalysis`: đã từng Submit hay chưa.
-- `IsResultOutdated = HasAnalysis && InputExpression != LastAnalyzedExpression`.
-
-Khi nhập mà **chưa Submit**, không thay `CurrentAnalysis`. Có thể duyệt các bước của kết quả cũ. Bên trên Result/Tree hiển thị nhãn tiếng Việt như: **“Dữ liệu bên dưới thuộc biểu thức đã phân tích trước đó: …”**.
-
-Khi Submit lại, thay trạng thái cũ bằng lần mới và reset stale = false. Lỗi syntax mới xóa tree cũ. Lỗi evaluator mới giữ tree mới và trace mới.
-
-## 7. Tree layout và highlight
-
-1. `TreeLayoutService` duyệt Parse Tree theo thứ tự, **loại các node `IsEpsilon` khỏi danh sách hiển thị**.
-2. Đo/ước lượng kích thước nhãn của mỗi node; phân bổ vị trí **từ dưới lên** để giảm va chạm giữa các nhánh (căn giữa parent trên phạm vi children).
-3. Trả `TreeLayoutResult` gồm kích thước mặt phẳng, `TreeNodePosition[]`, `TreeEdge[]`.
-4. WPF `ParseTreeView` vẽ node và đường nối trong `Canvas`, bọc bằng `ScrollViewer` với thanh cuộn ngang/dọc `Auto`.
-5. Mỗi node hiển thị được liên kết với `ParseTreeNodeViewModel.IsHighlighted` (hoặc thuộc tính tương đương), cập nhật khi đổi bước. **Không cần bố trí lại cây** khi Next/Previous.
-6. `HighlightedNodeIds` chỉ gồm terminal toán tử và các node nguồn tham gia phép tính (có thể là nhiều nhánh); không highlight toàn bộ đường từ root như phương án nâng cao đã loại bỏ.
-
-## 8. Ràng buộc WPF / MVVM
-
-- `MainViewModel` nên khai báo `public partial class MainViewModel : ObservableObject`.
-- `[ObservableProperty]` sinh observable property; `[RelayCommand]` sinh command. Với computed property, bảo đảm gọi `OnPropertyChanged`/`NotifyPropertyChangedFor` hợp lệ.
-- `CalculateCommand` là synchronous command; với input tối đa 200 ký tự và phạm vi này không cần luồng nền.
-- `NextStepCommand` chỉ bật khi `CurrentStepIndex < Steps.Count`; `PreviousStepCommand` chỉ bật khi `CurrentStepIndex > 0`. Gọi `NotifyCanExecuteChanged()` khi state thay đổi.
-- Có thể liên kết Enter vào command bằng InputBinding hoặc cơ chế hợp lệ trong WPF; tránh triển khai logic tính toán riêng trong code-behind.
-- Code-behind chỉ làm việc liên quan giao diện (khởi tạo, focus, chọn vị trí lỗi/scroll).
-- Dialog có thể là modal, đóng lại không làm reset cây hay trace.
-- Không hiển thị AST, không thêm plugin layout/graph hay navigation framework.
-
-## 9. Quản lý lỗi
-
-`ExpressionService` chuyển lỗi Input/Lexical/Syntax thành `ExpressionAnalysisResult(Error=..., ParseTree=null)`; không để exception dự kiến thoát đến UI. `Evaluator` tự tạo kết quả failure với `Steps` đã tính và `Error` step cuối. Thông tin lỗi có `Category`, `Code`, `Message`, `SourceSpan?`.
-
-Nếu gặp ngoại lệ lập trình không dự kiến, có thể hiển thị thông báo chung và log trong môi trường phát triển; **không** giả mạo thành Syntax Error. Tập trung bắt riêng các lỗi dự kiến `DivideByZeroException`, `OverflowException` tại tầng đánh giá.
-
-## 10. Biên kiểm thử và bảo trì
-
-Kiểm thử thủ công các tầng bằng UI và bảng trường hợp trong `TEST_PLAN.md`. Không thêm `ExpressionEvaluator.Tests`. Khi thay đổi CFG cần cập nhật đồng bộ parser, danh mục grammar read-only và logic evaluator; **không** cho người dùng chỉnh CFG trực tiếp.
+Chạy project xUnit `Tests/ExpressionEvaluator.Tests.csproj` để kiểm tra hồi quy logic EV/ER/EE và một phần trạng thái/cây. Kiểm thử **thủ công qua app WPF** theo `TEST_PLAN.md` vẫn bắt buộc để nghiệm thu đủ 80 ca EV/ER/EE/UI, đặc biệt hình tròn, mũi tên, scrollbar và highlight; xUnit không thay thế quan sát giao diện. Khi đổi CFG phải cập nhật đồng bộ `GrammarDefinition`, parser, evaluator, renderer, dialog và test plan; không chỉ thay XAML. Mã hiện dùng E/T/F, nhưng các ca WPF chưa được xác nhận Pass.

@@ -1,208 +1,71 @@
-# GRAMMAR — CFG, Lexer và Recursive Descent Parser
+# GRAMMAR — CFG E/T/F, Lexer và Recursive Descent Parser
 
-## 1. Mục tiêu
+## 1. Phạm vi và token
 
-Sử dụng **Context-Free Grammar cố định** và một **Recursive Descent Parser viết tay** để phân tích biểu thức số học gồm các số nguyên ASCII, `+ - * /`, ngoặc và toán tử một ngôi. Parser phải tạo **Parse Tree đúng cấu trúc CFG**, không tạo AST.
+Lexer nhận **duy nhất** chữ số ASCII `[0-9]+`, các dấu `+ - * / ( )` và bỏ qua `char.IsWhiteSpace`. Mỗi token giữ lexeme và `SourceSpan(StartIndex, Length)` theo chỉ số UTF-16 **zero-based** của chuỗi gốc; cuối chuỗi thêm `EndOfInput` với `StartIndex = expression.Length`, `Length = 0`. Dấu âm là token `Minus` riêng, không thuộc literal. Không nhận Unicode digit, số thập phân, ký pháp khoa học hay phép nhân ngầm. Parse literal sang `decimal` bằng `NumberStyles.None`/`InvariantCulture`; literal quá phạm vi gây `Lexical/NumberOutOfRange` tại span toàn bộ literal; ký tự lạ gây `Lexical/InvalidCharacter` tại ký tự đó. Giới hạn 200 `string.Length` thuộc `ExpressionService`, kiểm tra **trước** Lexer.
 
-## 2. Bộ token
-
-| TokenType | Lexeme | Ý nghĩa |
+| TokenType | Lexeme | Terminal trong Parse Tree |
 |---|---|---|
-| `Number` | `[0-9]+` | Số nguyên không dấu; giá trị parse sang `decimal` |
-| `Plus` | `+` | Unary plus hoặc binary plus (phân biệt bởi Parser) |
-| `Minus` | `-` | Unary minus hoặc binary minus |
-| `Multiply` | `*` | Nhân tường minh |
-| `Divide` | `/` | Chia thực |
-| `LeftParen` | `(` | Mở ngoặc |
-| `RightParen` | `)` | Đóng ngoặc |
-| `EndOfInput` | `""` | Sentinel kết thúc, `SourceSpan.Length = 0` |
+| Number | `[0-9]+` | `NUMBER` |
+| Plus / Minus | `+` / `-` | `PLUS` / `MINUS` |
+| Multiply / Divide | `*` / `/` | `MULTIPLY` / `DIVIDE` |
+| LeftParen / RightParen | `(` / `)` | `LEFT_PAREN` / `RIGHT_PAREN` |
+| EndOfInput | rỗng | **Không nằm trong cây** |
 
-- Lexer bỏ qua các ký tự `char.IsWhiteSpace` nhưng giữ **vị trí theo chuỗi gốc**.
-- Literal `-12` được tách thành `Minus`, `Number(12)`. Lexer không tự quyết định dấu một ngôi.
-- Không nhận dấu chấm, dấu phẩy, ký hiệu mũ, chữ cái, Unicode digit ngoài `0–9`.
-- **Chỉ phép nhân có `*`**: `2(3+4)` không được lexer sửa thành `2*(3+4)`.
-- Số quá phạm vi `decimal` trả **Lexical Error dạng NumberOutOfRange** tại token (dù mẫu chữ số hợp lệ).
-- Sau cùng luôn có token `EndOfInput` với `StartIndex = input.Length`.
+## 2. Văn phạm cố định
 
-## 3. Văn phạm chính thức
-
-Ký hiệu đầu: `Expr`.
+Ký hiệu bắt đầu `E`. Không sinh `ExprTail`, `TermTail`, AST hoặc node `ε`.
 
 ```bnf
-Expr      -> Term ExprTail
-ExprTail  -> PLUS Term ExprTail
-           | MINUS Term ExprTail
-           | ε
-
-Term      -> Unary TermTail
-TermTail  -> MULTIPLY Unary TermTail
-           | DIVIDE Unary TermTail
-           | ε
-
-Unary     -> PLUS Unary
-           | MINUS Unary
-           | Primary
-
-Primary   -> NUMBER
-           | LEFT_PAREN Expr RIGHT_PAREN
+E -> T PLUS E | T MINUS E | T
+T -> F MULTIPLY T | F DIVIDE T | F
+F -> PLUS F | MINUS F | LEFT_PAREN E RIGHT_PAREN | NUMBER
 ```
 
-Quy tắc trên dùng ký hiệu **terminal là token type**: `PLUS` ứng với `+`, `NUMBER` ứng với literal, ... Dialog có thể hiển thị một bản dễ đọc với chính các ký hiệu `+ - * / ( )`, miễn mapping rõ ràng và nhất quán.
+Thứ tự ưu tiên: `F` (số, ngoặc, unary) > `T` (nhân/chia) > `E` (cộng/trừ). Phép nhân phải có `*`; `2(3+4)` là Syntax Error. Mọi toán tử hai ngôi cùng mức **được đánh giá kết hợp trái** theo `EVALUATION.md`.
 
-`ε` = chuỗi rỗng. Với phân tích hoàn chỉnh, Parser phải **tiêu thụ hết input**, tức token tiếp theo sau `Expr` là `EndOfInput`.
+**Phân biệt quan trọng:** Cây này là **cây dẫn xuất của CFG đệ quy phải**, không phải cây nhóm phép toán (AST). Viết **rút gọn để giải thích** (ẩn `F`, tên terminal và một số node `T` một con), `10-3-2` có dạng `E(T(10), -, E(T(3), -, E(T(2))))`; **cây thực tế vẫn có đủ `E/T/F` và terminal**. Nếu ngây thơ tính từng subtree `E` bên phải sẽ ra `9`, **không phải hành vi của ứng dụng**. Evaluator đi dọc chuỗi `E` và fold-left: `(10-3)-2=5`. Giá trị trung gian `10-3` không có một subtree duy nhất trên hình; highlight dùng **tập ID terminal nguồn**, không dùng subtree của node `E` bên phải. Dialog văn phạm và chú giải cạnh cây phải nói rõ sự phân biệt này. Nếu muốn cây tự nó thể hiện phép kết hợp trái, phải đổi CFG/hình cây và cập nhật đồng bộ toàn bộ tài liệu; **không** được lặng lẽ coi cây hiện tại là AST.
 
-### Ưu tiên và kết hợp
+Các nhánh `E` đều bắt đầu bằng `T` và các nhánh `T` đều bắt đầu bằng `F`: **văn phạm viết ở trên không phải LL(1) nguyên dạng**. Parser recursive descent phân tích **tiền tố chung trước**, rồi nhìn token kế tiếp để chọn nhánh (tương đương left-factoring nội bộ); không chọn production trước khi đọc `T`/`F` và không gọi `ParseE`/`ParseT` ngay đầu nhánh.
 
-1. `Primary`: number hoặc ngoặc — cao nhất.
-2. `Unary`: `+`, `-` một ngôi (liên tiếp: `--5`, `+-5`).
-3. `Term`: `*`, `/` — kết hợp **trái**.
-4. `Expr`: `+`, `-` hai ngôi — kết hợp **trái**.
+## 3. Hợp đồng Parser
 
-Ví dụ:
+`Parse(tokens)` yêu cầu danh sách token có đúng một EOF cuối; mỗi lần Parse reset chỉ số token và bộ cấp ID. Chỉ trả root `E` sau khi consume/kiểm tra `EndOfInput`; gặp lỗi không xuất cây dở dang.
 
 ```text
-3 + 5 * 2   = 3 + (5*2)     = 13
--(2 + 3)    = -(5)           = -5
-10 - 3 - 2  = (10 - 3) - 2   = 5
-8 / 4 / 2   = (8 / 4) / 2    = 1
-3 * -2      = 3 * (-2)       = -6
+ParseE():
+    left = ParseT()
+    if lookahead in {Plus, Minus}:
+        op = Consume(); right = ParseE()
+        return Node("E", left, op, right)
+    if lookahead in {RightParen, EndOfInput}:
+        return Node("E", left)
+    Error(UnexpectedToken / MissingOperator at lookahead)
+
+ParseT():
+    left = ParseF()
+    if lookahead in {Multiply, Divide}:
+        op = Consume(); right = ParseT()
+        return Node("T", left, op, right)
+    if lookahead in {Plus, Minus, RightParen, EndOfInput}:
+        return Node("T", left)
+    Error(UnexpectedToken / MissingOperator at lookahead)
+
+ParseF():
+    if lookahead in {Plus, Minus}:
+        return Node("F", Consume(), ParseF())          // 2 con: unary
+    if lookahead == Number:
+        return Node("F", Consume())                   // 1 con: literal
+    if lookahead == LeftParen:
+        left = Consume(); inner = ParseE(); right = Expect(RightParen)
+        return Node("F", left, inner, right)           // 3 con: ngoặc
+    Error(ExpectedOperand at lookahead)
 ```
 
-**Chú ý học thuật:** Quy tắc `ExprTail` và `TermTail` đệ quy phải nhằm loại đệ quy trái cho Recursive Descent, nhưng *thứ tự áp dụng phép toán* vẫn phải là kết hợp trái. Không được tính đệ quy tail một cách ngây thơ thành `10 - (3 - 2)`.
+`E`/`T` có **1 hoặc 3 con**, `F` có **1, 2 hoặc 3 con**. Terminal là node lá; `Lexeme=null` với non-terminal, lexeme gốc với terminal. Mọi node có ID duy nhất trong một lần Parse, span theo chuỗi nguồn; cây bất biến sau Parse. Không lưu `CalculatedValue` hay geometry trong node.
 
-## 4. Tại sao grammar phù hợp Recursive Descent?
+FOLLOW hợp lệ để kết thúc `E`: `RightParen`, `EndOfInput`; để kết thúc `T`: `Plus`, `Minus`, `RightParen`, `EndOfInput`. Token khác không được coi là nhánh kết thúc hợp lệ: `3 4` và `2(3+4)` phải báo lỗi ở token thứ hai. `3)` ở top-level là `UnexpectedRightParen` tại `)` sau khi kiểm tra EOF. `(` chưa đóng đến EOF là `MissingRightParen` tại EOF; `3+*5` là `ExpectedOperand` tại `*`. Vị trí hiển thị cho người dùng = `Span.StartIndex+1`; EOF = `expression.Length+1`.
 
-Văn phạm đệ quy trái trực tiếp như `Expr -> Expr + Term | Term` gây gọi vô hạn nếu hiện thực bằng phương thức `ParseExpr()` gọi chính nó ngay ở nhánh đầu. Sau biến đổi, `Expr -> Term ExprTail` và `ExprTail -> + Term ExprTail | - Term ExprTail | ε` cho phép nhìn token hiện tại để chọn production mà không đệ quy trái.
+## 4. Diễn giải cây trong giao diện
 
-Những lựa chọn chính có lookahead một token (`LL(1)` trong phạm vi grammar này):
-
-- `ExprTail`: `Plus`, `Minus` → nhánh toán tử; `RightParen` hoặc `EndOfInput` → `ε`; token khác ở vị trí đó → báo lỗi phù hợp.
-- `TermTail`: `Multiply`, `Divide` → nhánh toán tử; `Plus`, `Minus`, `RightParen`, `EndOfInput` → `ε`; token khác → báo lỗi.
-- `Unary`: `Plus`/`Minus` → unary; `Number`/`LeftParen` → `Primary`.
-- `Primary`: `Number` hoặc `LeftParen`; ký hiệu khác → Syntax Error.
-
-Những token không thuộc tập theo sau hợp lệ phải báo lỗi; không được để `ε` che mất lỗi `3 4` hoặc `2(3+4)`.
-
-## 5. Cấu trúc Parser
-
-Hợp đồng dự kiến:
-
-```csharp
-public sealed class RecursiveDescentParser
-{
-    public ParseTreeNode Parse(IReadOnlyList<Token> tokens);
-
-    // Nội bộ:
-    // ParseExpr, ParseExprTail, ParseTerm, ParseTermTail,
-    // ParseUnary, ParsePrimary, Match, Current, Peek
-}
-```
-
-Pseudocode:
-
-```text
-Parse(tokens):
-    current = 0
-    root = ParseExpr()
-    Expect(EndOfInput)
-    return root
-
-ParseExpr():
-    return Node("Expr", ParseTerm(), ParseExprTail())
-
-ParseExprTail():
-    if current in {Plus, Minus}:
-        op = Consume()
-        return Node("ExprTail", op, ParseTerm(), ParseExprTail())
-    if current in {RightParen, EndOfInput}:
-        return Node("ExprTail", Epsilon())
-    Error(UnexpectedToken)
-
-ParseTerm():
-    return Node("Term", ParseUnary(), ParseTermTail())
-
-ParseTermTail():
-    if current in {Multiply, Divide}:
-        op = Consume()
-        return Node("TermTail", op, ParseUnary(), ParseTermTail())
-    if current in {Plus, Minus, RightParen, EndOfInput}:
-        return Node("TermTail", Epsilon())
-    Error(UnexpectedToken)
-
-ParseUnary():
-    if current in {Plus, Minus}:
-        return Node("Unary", Consume(), ParseUnary())
-    return Node("Unary", ParsePrimary())
-
-ParsePrimary():
-    if current is Number: return Node("Primary", Consume(Number))
-    if current is LeftParen:
-        return Node("Primary", Consume('('), ParseExpr(), Expect(')'))
-    Error(ExpectedOperand)
-```
-
-Đặc biệt: `RightParen` ở ngữ cảnh top-level có thể khiến `ExprTail` chọn `ε`, sau đó `Expect(EndOfInput)` báo `)` thừa. Trong ngoặc, `Expect(')')` báo thiếu `)` nếu gặp EOF.
-
-## 6. Mô hình Parse Tree
-
-Mỗi nút có:
-
-- `Id`: duy nhất trong **một lần Parse**, ổn định khi duyệt steps.
-- `Symbol`: tên non-terminal (`Expr`, `Term`, `Unary`, ...) hoặc terminal (`NUMBER`, `PLUS`, ...).
-- `Lexeme`: với terminal (ví dụ `5`, `*`), `null` với non-terminal.
-- `SourceSpan`: đoạn chuỗi nguồn tương ứng (zero-based).
-- `Children`: danh sách theo đúng thứ tự production.
-- `IsEpsilon`: đánh dấu trường hợp `ε` (nếu lưu nội bộ).
-
-**Chốt thực hiện:** Parser có thể lưu node `ε` để giữ đủ thông tin văn phạm; `ParseTreeView` **luôn lọc ẩn** node đó. Không có nút AST. Mọi nút còn lại gồm terminal và non-terminal phải xuất hiện trên tree view.
-
-Ví dụ biểu diễn ngắn gọn (đã ẩn các `ε`) cho `3 + 5 * 2`:
-
-```text
-Expr
-├── Term
-│   ├── Unary
-│   │   └── Primary
-│   │       └── NUMBER: 3
-│   └── TermTail
-└── ExprTail
-    ├── PLUS: +
-    ├── Term
-    │   ├── Unary
-    │   │   └── Primary
-    │   │       └── NUMBER: 5
-    │   └── TermTail
-    │       ├── MULTIPLY: *
-    │       ├── Unary
-    │       │   └── Primary
-    │       │       └── NUMBER: 2
-    │       └── TermTail
-    └── ExprTail
-```
-
-`TermTail`/`ExprTail` không có con hiển thị khi production của chúng sinh `ε`; **bản thân non-terminal vẫn hiển thị**.
-
-## 7. Khả năng định vị lỗi
-
-`SourceSpan(StartIndex, Length)` dùng chỉ số zero-based; UI hiển thị vị trí one-based.
-
-| Input | Vấn đề | Vị trí mong đợi |
-|---|---|---|
-| `3 & 4` | Ký tự không nhận diện `&` | 3 |
-| `3.5` | Dấu `.` không hỗ trợ | 2 |
-| `3 + * 5` | Thiếu toán hạng trước `*` | 5 |
-| `(2+3` | Thiếu `)` trước EOF | 5 (`Length + 1`) |
-| `2(3+4)` | Thiếu toán tử trước `(` | 2 |
-| `3 4` | Hai literal kề nhau | 3 |
-
-Nếu gặp lỗi từ vựng/cú pháp, Parser/Service không xuất tree dở dang cho UI. Trên lần Submit mới, trạng thái dữ liệu cũ phải được thay đúng như `REQUIREMENTS.md`.
-
-## 8. Thứ tự thực hiện
-
-1. Validate input rỗng và 200 ký tự.
-2. Lexer tạo token và EOF; kiểm tra số hợp phạm vi decimal.
-3. Parser áp dụng CFG, yêu cầu consume EOF.
-4. Chỉ trả về root nếu phân tích hoàn tất.
-5. Evaluator duyệt **cây này**, tạo result và trace (xem `EVALUATION.md`).
-
-Không thay grammar để đơn giản hóa việc vẽ: cây hiển thị phải phản ánh các non-terminal trên grammar cố định.
+Mọi non-terminal `E`, `T`, `F` và **mọi terminal** (kể cả dấu ngoặc và unary) đều có mặt. Nhãn nhìn thấy của terminal là `Lexeme` (`5`, `+`, `(` ...), nhãn non-terminal là `Symbol`; terminal vẫn giữ `Symbol` là loại token để Evaluator phân biệt unary/binary theo **vị trí trong production**. Cây bố trí node tròn, mũi tên cha → con, gốc `E` viền xanh. Không có `ExprTail`, `TermTail` hoặc node `ε` để ẩn. Quy tắc kích thước node và provenance xem `UI_DESIGN.md`, `EVALUATION.md`.

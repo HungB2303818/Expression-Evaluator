@@ -1,8 +1,10 @@
-# TEST_PLAN — Kế hoạch kiểm thử thủ công
+# TEST_PLAN — Kiểm thử thủ công kiến trúc E/T/F
 
 ## 1. Phạm vi và phương pháp
 
-**Chỉ kiểm thử thủ công qua ứng dụng WPF.** Không tạo Unit Test, không tạo project test và không tích hợp framework test tự động. Người kiểm thử nhập biểu thức vào TextBox, nhấn Enter/Tính toán, quan sát kết quả, cây, từng bước, highlight và lỗi.
+**Kiểm thử thủ công qua ứng dụng WPF là điều kiện nghiệm thu 80 ca.** Theo yêu cầu bổ sung, có thêm bộ xUnit tại `Tests/ExpressionEvaluator.Tests.csproj` để chạy tự động phần logic EV/ER/EE và một phần trạng thái/cấu trúc cây của UI. Unit test **không thay thế** việc nhập biểu thức vào TextBox, nhấn Enter/Tính toán, quan sát kết quả, cây, từng bước, highlight và lỗi trên WPF. Chạy tự động bằng `dotnet test Tests/ExpressionEvaluator.Tests.csproj -c Release`.
+
+**Đây là bộ ca chính thức của ứng dụng E/T/F.** Mã ứng dụng đã có parser/evaluator E/T/F, nhưng build và unit test không chứng minh cây được hiển thị đúng; phải trực tiếp kiểm tra WPF trước khi chấm các ca cấu trúc cây.
 
 **Quy ước trong bảng:**
 
@@ -42,6 +44,8 @@
 | EV-24 | `-0` | `0` | 1 | Unary zero |
 | EV-25 | `1/128` | `0.007813` | 1 | Làm tròn tại chữ số 5 theo AwayFromZero |
 | EV-26 | `-1/128` | `-0.007813` | 2 | Làm tròn giá trị âm và unary minus |
+| EV-27 | `2*3+6` | `12` | 2 | Trace `2*3=6` rồi `6+6=12`; hình cây E/T/F |
+| EV-28 | `1/10000000*10000000` | `1` | 2 | Bước chia hiển thị gần 0, **giá trị nội bộ không được làm tròn** trước nhân |
 
 **Đối chiếu biểu thức đặc biệt:** `3 + 5 * (2 - 1)` có thứ tự `2-1`, `5*1`, `3+5`, nên **3 steps**.
 
@@ -101,12 +105,18 @@
 | UI-12 | Submit `8/(4-4)` | Có cây mới và bước lỗi, hiển thị lỗi ngay |
 | UI-13 | Từ UI-12, Next tới Error step rồi Previous | Có thể điều hướng cả bước lỗi, highlight cập nhật |
 | UI-14 | Tính biểu thức dài nhưng hợp lệ | Có scrollbar ngang/dọc khi cây vượt viewport, không Zoom/Pan |
-| UI-15 | Quan sát cây `3+5*2` | Non-terminal `Expr`, `Term`, `ExprTail`, `TermTail`, ... hiển thị; không có node ε |
-| UI-16 | Nhấn **Xem văn phạm** | Dialog chỉ đọc, grammar đầy đủ; đóng không mất trạng thái |
+| UI-15 | Quan sát cây `3+5*2` | Chỉ có non-terminal `E`, `T`, `F`, đủ terminal; không có `ExprTail`, `TermTail`, `ε` |
+| UI-16 | Nhấn **Xem văn phạm** | Dialog chỉ đọc có đúng production `E/T/F`, chú giải dẫn xuất ≠ thứ tự tính; đóng không mất trạng thái |
 | UI-17 | Có Lexical/Syntax Error | Select vị trí/token lỗi trong TextBox hoặc đặt caret EOF; có mô tả tiếng Việt |
 | UI-18 | Đóng và mở ứng dụng | Không còn expression/result/history trước đó |
 | UI-19 | Dùng cửa sổ đủ nhỏ để tree cần cuộn | Có scrollbar và node không chồng nhau |
 | UI-20 | Nhập `--5+2*3`, duyệt bước | Tổng 4 bước, highlight unary ở các bước đầu |
+| UI-21 | Tính `2*3+6`, xem cây | Node **tròn**, nhãn terminal `2`, `*`, `3`, `+`, `6`; root `E` viền xanh; cạnh có mũi tên **cha → con** |
+| UI-22 | Tính `10-3-2`, xem hình và duyệt bước | Cây dẫn xuất **rẽ phải** theo E→T−E (đủ F/terminal), **trace trái** `10-3=7` → `7-2=5`; bước 2 highlight nguồn `10,-,3` cộng toán tử `-` thứ hai và `2`; có chú giải cây ≠ AST |
+| UI-23 | Tính literal `79228162514264337593543950335` | Hình tròn NUMBER đủ đường kính chứa **toàn bộ 29 chữ số**, không bị cắt/chồng; cuộn để xem khi cần |
+| UI-24 | Tính `1/10000000*10000000`, duyệt bước | Kết quả `1`; bước chia hiển thị gần `0` có nhãn `≈`/chú thích làm tròn, không trình bày `0*10000000=1` như đẳng thức chính xác |
+| UI-25 | Tính `--5`, xem nhánh F rồi duyệt 2 bước | Nhánh `F → MINUS F` có **2 con**; hai bước unary và highlight dấu tương ứng; không có tail/ε |
+| UI-26 | Tính biểu thức gần 200 ký tự với literal dài, thu nhỏ cửa sổ | Node tròn lớn không cắt nhãn, cấp/cạnh không chồng nhau, có thể cuộn ngang và dọc |
 
 ## 6. Mẫu phiếu ghi kết quả
 
@@ -127,8 +137,8 @@ Có thể sao chép bảng này khi thực thi. Khi một test lỗi, ghi input,
 4. Với ER, kiểm tra **loại, nguyên nhân, vị trí** và việc không hiển thị cây.
 5. Với EE, kiểm tra **trace không bị mất**, có Error step cuối, không có result hợp lệ.
 6. Với UI, kiểm tra stale banner, input Enter, Next/Previous, highlight, scrollbar, Grammar Dialog.
-7. Đánh dấu Pass/Fail, sửa lỗi và chạy lại các ca liên quan.
+7. Chạy thêm bộ xUnit để kiểm tra hồi quy logic; đánh dấu Pass/Fail **thủ công** riêng cho 80 ID sau khi trực tiếp quan sát WPF, sửa lỗi và chạy lại các ca liên quan.
 
-**Nghiệm thu:** Tất cả test bắt buộc Pass; không crash do input sai; không tự thay đổi những quyết định nằm ngoài phạm vi.
+**Nghiệm thu:** Toàn bộ **80 ca** (28 EV, 20 ER, 6 EE, 26 UI) bắt buộc được ghi Actual Result và Pass/Fail. Không coi build/smoke là Pass; không crash do input sai; không tự thay đổi những quyết định nằm ngoài phạm vi. Các ca mới UI-21..26 phải được thực hiện trên cây E/T/F, không trên bản cây cũ.
 
-Không tạo tự động hóa hoặc project kiểm thử trong giai đoạn đã chốt.
+Bộ xUnit là phần mở rộng theo yêu cầu sau giai đoạn đã chốt; kết quả `dotnet test` được ghi riêng, không tự chuyển trạng thái của 80 ca WPF sang Pass.

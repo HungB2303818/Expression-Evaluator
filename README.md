@@ -50,7 +50,7 @@ Từ thư mục gốc dự án, trên Windows có .NET 10 SDK:
 dotnet test Tests/ExpressionEvaluator.Tests.csproj -c Release
 ```
 
-Bộ xUnit kiểm tra logic đánh giá, phân loại lỗi, cây và một phần trạng thái ViewModel/layout. Lần chạy được ghi trong [kết quả kiểm thử refactor](ExpressionEvaluator_Docs_Refactor/TEST_RESULTS.md) đạt **60/60 test**; bạn nên chạy lại trên máy mình. **Test tự động không thay cho kiểm thử giao diện WPF:** 80 ca thao tác thủ công trong [test plan](ExpressionEvaluator_Docs_Refactor/TEST_PLAN.md) chưa được xác nhận Pass.
+Bộ xUnit kiểm tra logic đánh giá, phân loại lỗi, cây và một phần trạng thái ViewModel/layout. Lần chạy được ghi trong [kết quả kiểm thử](ExpressionEvaluator_Docs/TEST_RESULTS.md) đạt **60/60 test**; bạn nên chạy lại trên máy mình. **Test tự động không thay cho kiểm thử giao diện WPF:** 80 ca thao tác thủ công trong [test plan](ExpressionEvaluator_Docs/TEST_PLAN.md) chưa được xác nhận Pass.
 
 ## Cấu trúc dự án và tài liệu
 
@@ -61,7 +61,6 @@ Bộ xUnit kiểm tra logic đánh giá, phân loại lỗi, cây và một ph�
 | `Models/` | Token, cây phân tích, kết quả, lỗi và các bước tính |
 | `ViewModels/`, `Views/`, `Resources/` | Trạng thái MVVM, giao diện WPF và giao diện cây |
 | `Tests/` | Project xUnit độc lập với ứng dụng WPF |
-| [`ExpressionEvaluator_Docs_Refactor/`](ExpressionEvaluator_Docs_Refactor/README.md) | Đặc tả E/T/F và kế hoạch/kết quả kiểm thử đang áp dụng |
-| `ExpressionEvaluator_Docs/` | Tài liệu của thiết kế văn phạm **cũ**, giữ để đối chiếu |
+| [`ExpressionEvaluator_Docs/`](ExpressionEvaluator_Docs/README.md) | Tài liệu chính thức: đặc tả E/T/F, hướng dẫn kiểm thử và kết quả |
 
 Nếu `dotnet` không được nhận diện, cài .NET 10 SDK rồi mở lại PowerShell. Nếu khôi phục gói thất bại, kiểm tra kết nối mạng và chạy lại `dotnet restore ExpressionEvaluator.csproj` (đối với test: `dotnet restore Tests/ExpressionEvaluator.Tests.csproj`).
