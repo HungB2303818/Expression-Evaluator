@@ -1,0 +1,156 @@
+<Window x:Class="ExpressionEvaluator.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:ExpressionEvaluator.Views.Controls"
+        Title="Expression Evaluator" Width="1100" Height="700"
+        MinWidth="800" MinHeight="540" WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
+    </Window.Resources>
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" LastChildFill="True" Margin="0,0,0,16">
+            <Button Content="Xem văn phạm" Command="{Binding ViewGrammarCommand}"
+                    DockPanel.Dock="Right" Margin="12,0,0,0" />
+            <StackPanel>
+                <TextBlock Text="Expression Evaluator" FontSize="24" FontWeight="SemiBold" />
+                <TextBlock Text="Phân tích văn phạm và quan sát từng bước tính"
+                           Foreground="{StaticResource SecondaryTextBrush}" FontSize="13" />
+            </StackPanel>
+        </DockPanel>
+
+        <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="18" Margin="0,0,0,14">
+            <StackPanel>
+                <TextBlock Text="Biểu thức" FontWeight="SemiBold" Margin="0,0,0,8" />
+                <DockPanel LastChildFill="True">
+                    <Button Content="Tính toán" Command="{Binding CalculateCommand}"
+                            Style="{StaticResource PrimaryButtonStyle}" DockPanel.Dock="Right"
+                            Margin="12,0,0,0" />
+                    <TextBox x:Name="ExpressionInput"
+                             Text="{Binding InputExpression, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             KeyDown="ExpressionInput_KeyDown"
+                             VerticalContentAlignment="Center" Padding="10,8" FontSize="16"
+                             ToolTip="Nhập số nguyên, +, -, *, / và dấu ngoặc rồi nhấn Enter" />
+                </DockPanel>
+                <TextBlock Text="{Binding InputLengthText}" FontSize="12"
+                           Foreground="{StaticResource SecondaryTextBrush}" Margin="0,6,0,0" />
+
+                <Border Background="{StaticResource WarningBackgroundBrush}"
+                        BorderBrush="{StaticResource WarningBorderBrush}" BorderThickness="1"
+                        CornerRadius="6" Padding="10" Margin="0,12,0,0"
+                        Visibility="{Binding IsResultOutdated, Converter={StaticResource VisibleWhenTrue}}">
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextBrush}">
+                        <Run Text="Biểu thức đã thay đổi. Kết quả và cây bên dưới thuộc biểu thức đã phân tích trước đó: " />
+                        <Run Text="{Binding LastAnalyzedExpression}" FontWeight="SemiBold" />
+                    </TextBlock>
+                </Border>
+
+                <Border Background="{StaticResource ErrorBackgroundBrush}"
+                        BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1"
+                        CornerRadius="6" Padding="10" Margin="0,12,0,0"
+                        Visibility="{Binding HasError, Converter={StaticResource VisibleWhenTrue}}">
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource ErrorBrush}"
+                               TextWrapping="Wrap" FontWeight="SemiBold" />
+                </Border>
+
+                <StackPanel Orientation="Horizontal" Margin="0,12,0,0"
+                            Visibility="{Binding HasResult, Converter={StaticResource VisibleWhenTrue}}">
+                    <TextBlock Text="Kết quả: " FontSize="18" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding ResultText}" FontWeight="Bold" FontSize="24"
+                               Foreground="{StaticResource SuccessBrush}" VerticalAlignment="Center" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" MinWidth="420" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" MinWidth="240" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Padding="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="CÂY PHÂN TÍCH CÚ PHÁP" FontWeight="SemiBold"
+                               Margin="4,2,0,4" />
+                    <TextBlock Grid.Row="1" Text="Cây thể hiện luật sinh; các phép cùng mức tính từ trái sang phải."
+                               Foreground="{StaticResource SecondaryTextBrush}" FontSize="12"
+                               TextWrapping="Wrap" Margin="4,0,0,10" />
+                    <TextBlock Grid.Row="2" Text="Cây sẽ xuất hiện sau khi tính biểu thức hợp lệ."
+                               Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasTree}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <controls:ParseTreeView Grid.Row="2"
+                                            Visibility="{Binding HasTree, Converter={StaticResource VisibleWhenTrue}}"
+                                            TreeRoot="{Binding CurrentAnalysis.ParseTree}"
+                                            Layout="{Binding TreeLayout}"
+                                            HighlightedNodeIds="{Binding HighlightedNodeIds}"
+                                            IsErrorStep="{Binding IsCurrentStepError}" />
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="2" Style="{StaticResource CardStyle}" Padding="16">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="CÁC BƯỚC TÍNH TOÁN" FontWeight="SemiBold" Margin="0,0,0,18" />
+                    <TextBlock Grid.Row="1" Text="{Binding StepCounterText}" FontWeight="SemiBold"
+                               FontSize="18" Margin="0,0,0,12" />
+                    <Border Grid.Row="2" BorderThickness="1"
+                            CornerRadius="6" Padding="12">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+                                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsCurrentStepError}" Value="True">
+                                        <Setter Property="Background" Value="{StaticResource ErrorBackgroundBrush}" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource ErrorBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding StepText}" TextWrapping="Wrap" FontSize="16">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsCurrentStepError}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+                    <UniformGrid Grid.Row="3" Columns="2" Margin="0,16,0,0">
+                        <Button Content="Trước" Command="{Binding PreviousStepCommand}" Margin="0,0,6,0" />
+                        <Button Content="Tiếp" Command="{Binding NextStepCommand}" Margin="6,0,0,0" />
+                    </UniformGrid>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
